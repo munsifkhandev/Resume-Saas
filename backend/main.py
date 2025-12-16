@@ -2,6 +2,7 @@ import os
 import json
 import io
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 import PyPDF2
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -18,6 +19,14 @@ client = OpenAI(
 )
 
 app = FastAPI(title="Resume Improver SaaS (LongCat Powered)")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"], # Saare methods (GET, POST, etc.) allow karo
+    allow_headers=["*"],
+)
 
 def get_longcat_response(text):
     # Prompt Engineering: Hum AI ko strict instruction denge JSON ke liye
