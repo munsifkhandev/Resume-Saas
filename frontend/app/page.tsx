@@ -51,7 +51,9 @@ export default function Home() {
     formData.append("mode", mode);
 
     try {
-      const res = await axios.post("http://127.0.0.1:8000/process", formData);
+      // Localhost ke liye fallback, lekin live par Env variable use karega
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      const res = await axios.post(`${API_URL}/process`, formData);
       setResult(res.data.data);
     } catch (e) {
       console.error(e);
