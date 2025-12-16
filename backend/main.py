@@ -1,108 +1,118 @@
 import os
 import json
 import io
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 import PyPDF2
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# 1. Env Variables Load
 load_dotenv()
 
-# 2. LongCat Client Configuration (According to Docs)
-# Docs: "Compatible with OpenAI API specification"
-# Docs Example: base_url="https://api.longcat.chat/openai"
+# Client Setup
 client = OpenAI(
     api_key=os.getenv("LONGCAT_API_KEY"), 
-    base_url="https://api.longcat.chat/openai" 
+    base_url="https://api.longcat.chat/openai/v1" 
 )
 
-app = FastAPI(title="Resume Improver SaaS (LongCat Powered)")
+app = FastAPI(title="Resume AI Supertool")
 
+# CORS Setup (Frontend Connection)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
     allow_credentials=True,
-    allow_methods=["*"], # Saare methods (GET, POST, etc.) allow karo
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-def get_longcat_response(text):
-    # Prompt Engineering: Hum AI ko strict instruction denge JSON ke liye
-    prompt = f"""
-    You are an expert AI Resume Coach. Analyze the resume text below against industry standards.
+def get_ai_response(text, mode, job_desc=None):
     
-    RESUME TEXT:
-    {text}
-    
-    REQUIRED OUTPUT:
-    Respond ONLY with a valid JSON object. Do not add markdown like ```json or any text outside the JSON.
-    
-    Structure:
-    {{
-        "ats_score": 0-100 (integer),
-        "missing_skills": ["skill1", "skill2"],
-        "summary": "Professional summary (max 2 lines)",
-        "improvement_tips": ["Specific tip 1", "Specific tip 2"]
-    }}
-    """
-    
+    # --- PROMPT 1: ROAST MODE 🔥 ---
+    if mode == "roast":
+        prompt = f"""
+        Act as a ruthless Stand-up Comedian. ROAST this resume! 
+        Be sarcastic, funny, and brutal about the layout, buzzwords, and vague skills.
+        RESUME: {text[:10000]}
+        
+        OUTPUT JSON ONLY:
+        {{
+            "roast_title": "A funny 1-liner title",
+            "burns": ["Sarcastic comment 1", "Sarcastic comment 2", "Sarcastic comment 3"],
+            "overall_verdict": "Funny closing statement"
+        }}
+        """
+
+    # --- PROMPT 2: ATS BUILDER MODE 🛠️ ---
+    elif mode == "builder":
+        prompt = f"""
+        Act as a Professional Resume Writer. Extract data from the resume and REWRITE it for ATS.
+        If Job Description is provided: {job_desc}, tailor the content to it.
+        
+        RESUME: {text[:10000]}
+        
+        OUTPUT JSON ONLY:
+        {{
+            "personal_info": {{ "name": "Name", "email": "Email", "phone": "Phone", "linkedin": "LinkedIn", "summary": "Professional Summary" }},
+            "skills": ["Skill1", "Skill2", "Skill3", "Skill4"],
+            "experience": [ {{ "role": "Job Title", "company": "Company", "duration": "Dates", "points": ["Action verb bullet point 1", "Action verb bullet point 2"] }} ],
+            "education": [ {{ "degree": "Degree", "university": "Uni", "year": "Year" }} ],
+            "projects": [ {{ "name": "Project Name", "tech_stack": "Tech used", "description": "Short description" }} ]
+        }}
+        """
+
+    # --- PROMPT 3: ANALYZER MODE 📊 (Default) ---
+    else:
+        prompt = f"""
+        Act as an ATS Scanner. Compare Resume vs Job Description.
+        RESUME: {text[:10000]}
+        JD: {job_desc if job_desc else "General Industry Standards"}
+        
+        OUTPUT JSON ONLY:
+        {{
+            "ats_score": 0-100,
+            "missing_skills": ["Skill1", "Skill2"],
+            "summary": "Professional Feedback",
+            "improvement_tips": ["Tip1", "Tip2"]
+        }}
+        """
+
     try:
-        # Docs: Supported Model is "LongCat-Flash-Chat"
         response = client.chat.completions.create(
             model="LongCat-Flash-Chat", 
             messages=[
-                {"role": "system", "content": "You are a helpful assistant that outputs only strict JSON."},
+                {"role": "system", "content": "You are a helpful assistant that outputs strictly valid JSON. No markdown."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7, # Docs example uses 0.7
-            max_tokens=1000  # Docs example limit
+            temperature=0.8 if mode == "roast" else 0.5,
+            max_tokens=2000
         )
         
-        # Response Cleaning
-        raw_content = response.choices[0].message.content
-        
-        # Kabhi kabhi AI ```json code block laga deta hai, usse safai karna zaroori hai
-        clean_text = raw_content.replace("```json", "").replace("```", "").strip()
-        
+        # Clean Output
+        clean_text = response.choices[0].message.content.replace("```json", "").replace("```", "").strip()
         return json.loads(clean_text)
         
-    except json.JSONDecodeError:
-        return {"error": "AI response was not valid JSON", "raw_output": raw_content}
     except Exception as e:
-        print(f"LongCat API Error: {e}")
-        return {"error": "AI Service unavailable", "details": str(e)}
+        print(f"AI Error: {e}")
+        return {"error": str(e)}
 
-@app.get("/")
-def home():
-    return {"message": "LongCat Powered Backend is Running!"}
-
-@app.post("/analyze")
-async def analyze_resume(file: UploadFile = File(...)):
+@app.post("/process")
+async def process_resume(
+    file: UploadFile = File(...), 
+    job_description: str = Form(""),
+    mode: str = Form("analyze") 
+):
     if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files allowed")
-
+        raise HTTPException(status_code=400, detail="Only PDF allowed")
+    
     try:
-        # 1. PDF Parsing
-        contents = await file.read()
-        pdf_reader = PyPDF2.PdfReader(io.BytesIO(contents))
-        text_content = ""
-        for page in pdf_reader.pages:
-            text_content += page.extract_text() or ""
-
-        # Validation
-        if len(text_content) < 50:
-            return {"error": "Resume text too short or unreadable"}
-
-        # 2. AI Analysis via LongCat
-        # Hum text ko truncate kar rahe hain taaki token limit cross na ho (Safety)
-        analysis = get_longcat_response(text_content[:15000]) 
-
-        return {
-            "filename": file.filename,
-            "analysis": analysis
-        }
-
+        content = await file.read()
+        reader = PyPDF2.PdfReader(io.BytesIO(content))
+        text = "".join([page.extract_text() for page in reader.pages]) or ""
+        
+        # AI Logic Call
+        result = get_ai_response(text, mode, job_description)
+        return {"mode": mode, "data": result}
+        
     except Exception as e:
         return {"error": str(e)}
