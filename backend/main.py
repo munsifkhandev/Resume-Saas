@@ -20,7 +20,7 @@ app = FastAPI(title="Resume AI Supertool")
 # CORS Setup (Frontend Connection)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
