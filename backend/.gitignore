@@ -1,0 +1,32 @@
+# --- Security (Sabse Important) ---
+.env
+.env.local
+.env.*
+*.pem
+secrets.json
+
+# --- Python (Backend) ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+env/
+.venv/
+backend/venv/
+*.log
+
+# --- Frontend (Next.js / Node) ---
+node_modules/
+.next/
+out/
+build/
+dist/
+.npm
+*.log
+
+# --- IDE & OS (Settings files) ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
